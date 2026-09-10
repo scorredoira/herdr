@@ -663,6 +663,37 @@ impl ClientShellOverlay {
     }
 }
 
+/// What the pointer is over while the link modifier is held: the runs to underline, or
+/// none when that cell carries no link. `cell` is remembered so resting on a plain cell
+/// is not asked about twice.
+#[derive(Debug, Clone)]
+pub(super) struct ClientLinkHover {
+    pub(super) pane_id: String,
+    pub(super) inner_rect: Rect,
+    pub(super) content_revision: Option<u64>,
+    pub(super) cell: (u16, u16),
+    pub(super) runs: Vec<crate::api::schema::PaneLinkRun>,
+}
+
+impl ClientLinkHover {
+    pub(super) fn covers(&self, cell: (u16, u16)) -> bool {
+        self.cell == cell
+            || self.runs.iter().any(|run| {
+                run.viewport_row == cell.0 && cell.1 >= run.start_col && cell.1 < run.end_col
+            })
+    }
+}
+
+/// The cell a peek is about: what is in flight, and what the pointer moved to since.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub(super) struct ClientLinkHoverTarget {
+    pub(super) pane_id: String,
+    pub(super) inner_rect: Rect,
+    pub(super) content_revision: Option<u64>,
+    pub(super) offset_from_bottom: Option<u64>,
+    pub(super) cell: (u16, u16),
+}
+
 #[derive(Debug)]
 pub(super) enum PendingEndpointKind {
     Generic,
@@ -704,6 +735,9 @@ pub(super) enum PendingEndpointKind {
         pane_id: String,
         inner_rect: Rect,
         fallback_events: Vec<crossterm::event::MouseEvent>,
+    },
+    PaneLinkPeek {
+        target: ClientLinkHoverTarget,
     },
     CopyMotion {
         pane_id: String,
@@ -932,6 +966,10 @@ pub(crate) struct ClientShellState {
     pub(super) previous_pane_id: Option<String>,
     pub(super) pane_mouse_gesture: Option<ClientPaneMouseGesture>,
     pub(super) url_click_consumes_until_up: bool,
+    /// The link under the pointer, and the peeks that keep it current.
+    pub(super) link_hover: Option<ClientLinkHover>,
+    pub(super) link_hover_in_flight: Option<ClientLinkHoverTarget>,
+    pub(super) link_hover_wanted: Option<ClientLinkHoverTarget>,
     pub(super) replaying_url_click: bool,
     pub(super) selection: Option<crate::selection::Selection<String>>,
     pub(super) last_pane_click: Option<ClientPaneClick>,
@@ -1075,6 +1113,9 @@ impl ClientShellState {
             previous_pane_id: None,
             pane_mouse_gesture: None,
             url_click_consumes_until_up: false,
+            link_hover: None,
+            link_hover_in_flight: None,
+            link_hover_wanted: None,
             replaying_url_click: false,
             selection: None,
             last_pane_click: None,

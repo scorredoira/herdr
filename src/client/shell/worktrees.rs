@@ -544,6 +544,7 @@ impl ClientShellState {
                 | PendingEndpointKind::PaneScroll { .. }
                 | PendingEndpointKind::WordSelection { .. }
                 | PendingEndpointKind::PaneLinkActivate { .. }
+                | PendingEndpointKind::PaneLinkPeek { .. }
                 | PendingEndpointKind::CopyMotion { .. }
                 | PendingEndpointKind::CopySearch { .. },
                 Err(_),

@@ -258,6 +258,7 @@ impl HeadlessServer {
                 | Method::PaneFocusDirection(_)
                 | Method::PaneInputSet(_)
                 | Method::PaneLinkActivate(_)
+                | Method::PaneLinkPeek(_)
                 | Method::PaneRename(_)
                 | Method::PaneResize(_)
                 | Method::PaneScroll(_)

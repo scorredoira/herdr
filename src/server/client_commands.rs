@@ -26,6 +26,7 @@ const CLIENT_SHELL_METHODS: &[&str] = &[
     "pane.focus_direction",
     "pane.input.set",
     "pane.link.activate",
+    "pane.link.peek",
     "pane.rename",
     "pane.resize",
     "pane.scroll",

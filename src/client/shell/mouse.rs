@@ -601,6 +601,112 @@ impl ClientShellState {
         }
     }
 
+    /// Keeps the underline under the pointer while the link modifier is held. Only one
+    /// peek is ever in flight: a pointer crossing the screen leaves its latest cell as
+    /// the one to ask about next, so the traffic is bounded by the round trip and not by
+    /// how fast the mouse moves.
+    pub(super) fn update_link_hover(
+        &mut self,
+        mouse: MouseEvent,
+        point: (u16, u16),
+        outcome: &mut ClientShellInput,
+    ) {
+        let armed = self.overlay.is_none()
+            && self.mode == ClientShellMode::Terminal
+            && mouse.modifiers.contains(self.config.link_click_modifiers);
+        if !armed {
+            self.link_hover_wanted = None;
+            if self.link_hover.take().is_some() {
+                outcome.repaint = true;
+            }
+            return;
+        }
+
+        let hit = self
+            .hits
+            .panes
+            .iter()
+            .find(|hit| super::contains(hit.inner_rect, point))
+            .cloned();
+        let Some(hit) = hit else {
+            self.link_hover_wanted = None;
+            if self.link_hover.take().is_some() {
+                outcome.repaint = true;
+            }
+            return;
+        };
+
+        let cell = (
+            mouse.row.saturating_sub(hit.inner_rect.y),
+            mouse.column.saturating_sub(hit.inner_rect.x),
+        );
+        let content_revision = self
+            .pane_surface
+            .as_ref()
+            .and_then(|surface| {
+                surface
+                    .panes
+                    .iter()
+                    .find(|pane| pane.pane_id == hit.pane_id)
+            })
+            .map(|pane| pane.content_revision);
+        let target = ClientLinkHoverTarget {
+            pane_id: hit.pane_id.clone(),
+            inner_rect: hit.inner_rect,
+            content_revision,
+            offset_from_bottom: hit.scroll.map(|metrics| metrics.offset_from_bottom as u64),
+            cell,
+        };
+
+        if let Some(hover) = &self.link_hover {
+            let current = hover.pane_id == target.pane_id
+                && hover.content_revision == target.content_revision
+                && hover.covers(cell);
+            if current {
+                self.link_hover_wanted = None;
+                return;
+            }
+        }
+        if self.link_hover_in_flight.as_ref() == Some(&target) {
+            return;
+        }
+
+        self.link_hover_wanted = Some(target.clone());
+        if self.link_hover_in_flight.is_none() {
+            self.send_link_hover_peek(target, outcome);
+        }
+    }
+
+    pub(super) fn send_link_hover_peek(
+        &mut self,
+        target: ClientLinkHoverTarget,
+        outcome: &mut ClientShellInput,
+    ) {
+        let method =
+            crate::api::schema::Method::PaneLinkPeek(crate::api::schema::PaneLinkPeekParams {
+                pane_id: target.pane_id.clone(),
+                viewport_row: target.cell.0,
+                col: target.cell.1,
+                content_revision: target.content_revision,
+                offset_from_bottom: target.offset_from_bottom,
+            });
+        // A server too old to answer this is not worth a notice on every hover.
+        if !self.supports_endpoint_method(&method) {
+            self.link_hover_wanted = None;
+            return;
+        }
+        self.link_hover_wanted = None;
+        self.link_hover_in_flight = Some(target.clone());
+        let sent = self.push_endpoint_method_with_kind(
+            method,
+            PendingEndpointKind::PaneLinkPeek { target },
+            outcome,
+        );
+        if !sent {
+            self.link_hover_in_flight = None;
+        }
+    }
+
     pub(super) fn handle_mouse(&mut self, mouse: MouseEvent, outcome: &mut ClientShellInput) {
         let point = (mouse.column, mouse.row);
         if matches!(self.overlay, Some(ClientShellOverlay::Onboarding)) {
@@ -854,6 +960,9 @@ impl ClientShellState {
         }
         if self.popup_terminal_id.is_some() {
             return;
+        }
+        if matches!(mouse.kind, MouseEventKind::Moved) {
+            self.update_link_hover(mouse, point, outcome);
         }
         if !self.replaying_url_click
             && self.overlay.is_none()

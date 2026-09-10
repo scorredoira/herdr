@@ -529,10 +529,15 @@ impl ClientShellState {
         }
         if let Err(error) = &result {
             let code = error.code.as_deref().unwrap_or("invalid_response");
-            if !matches!(
-                code,
-                "confirmation_required" | "stale_content" | "stale_target"
-            ) {
+            // A peek is the pointer asking a question nobody typed: whatever it answers,
+            // it never earns a notice on screen.
+            let silent = matches!(pending.kind, PendingEndpointKind::PaneLinkPeek { .. });
+            if !silent
+                && !matches!(
+                    code,
+                    "confirmation_required" | "stale_content" | "stale_target"
+                )
+            {
                 let (kind, notice_code, title, body) = match code {
                     "endpoint_timeout" => (
                         ClientEndpointNoticeKind::Timeout,
@@ -564,6 +569,40 @@ impl ClientShellState {
         }
         match pending.kind {
             PendingEndpointKind::Generic => {}
+            PendingEndpointKind::PaneLinkPeek { target } => {
+                self.link_hover_in_flight = None;
+                let hover = match result {
+                    Ok(crate::api::schema::ResponseResult::PaneLinkPeeked { runs, .. }) => {
+                        Some(ClientLinkHover {
+                            pane_id: target.pane_id,
+                            inner_rect: target.inner_rect,
+                            content_revision: target.content_revision,
+                            cell: target.cell,
+                            runs,
+                        })
+                    }
+                    // A peek that could not be answered is not worth a word on screen: the
+                    // pointer is still there and the next movement asks again.
+                    _ => None,
+                };
+                let changed = self
+                    .link_hover
+                    .as_ref()
+                    .map(|current| current.runs.clone())
+                    .unwrap_or_default()
+                    != hover
+                        .as_ref()
+                        .map(|next| next.runs.clone())
+                        .unwrap_or_default();
+                self.link_hover = hover;
+                let mut actions = Vec::new();
+                if let Some(next) = self.link_hover_wanted.take() {
+                    let mut outcome = ClientShellInput::default();
+                    self.send_link_hover_peek(next, &mut outcome);
+                    actions = outcome.actions;
+                }
+                return (changed, actions);
+            }
             PendingEndpointKind::ProductAnnouncementDismiss { version, id } => {
                 return match result {
                     Ok(_) => (false, Vec::new()),

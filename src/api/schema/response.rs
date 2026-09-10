@@ -8,8 +8,8 @@ use super::integrations::{
 };
 use super::panes::{
     LayoutDescription, PaneEdgesResult, PaneFocusDirectionResult, PaneInfo, PaneLayoutSnapshot,
-    PaneMoveResult, PaneNeighborResult, PaneProcessInfo, PaneReadResult, PaneResizeResult,
-    PaneSwapResult, PaneTextPoint, PaneTextRange, PaneZoomResult,
+    PaneLinkRun, PaneMoveResult, PaneNeighborResult, PaneProcessInfo, PaneReadResult,
+    PaneResizeResult, PaneSwapResult, PaneTextPoint, PaneTextRange, PaneZoomResult,
 };
 use super::plugins::{
     InstalledPluginInfo, PluginActionInfo, PluginCommandLogInfo, PluginInvocationContext,
@@ -278,6 +278,12 @@ pub enum ResponseResult {
         #[serde(default, skip_serializing_if = "Option::is_none")]
         url: Option<String>,
         handled: bool,
+    },
+    PaneLinkPeeked {
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        url: Option<String>,
+        #[serde(default, skip_serializing_if = "Vec::is_empty")]
+        runs: Vec<PaneLinkRun>,
     },
     PluginLogList {
         logs: Vec<PluginCommandLogInfo>,

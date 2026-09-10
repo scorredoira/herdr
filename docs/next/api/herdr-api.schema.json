@@ -2763,6 +2763,48 @@
           ],
           "type": "object"
         },
+        "PaneLinkPeekParams": {
+          "description": "Where the pointer is, to ask what link is drawn under it without opening anything.",
+          "properties": {
+            "col": {
+              "format": "uint16",
+              "maximum": 65535,
+              "minimum": 0,
+              "type": "integer"
+            },
+            "content_revision": {
+              "format": "uint64",
+              "minimum": 0,
+              "type": [
+                "integer",
+                "null"
+              ]
+            },
+            "offset_from_bottom": {
+              "format": "uint64",
+              "minimum": 0,
+              "type": [
+                "integer",
+                "null"
+              ]
+            },
+            "pane_id": {
+              "type": "string"
+            },
+            "viewport_row": {
+              "format": "uint16",
+              "maximum": 65535,
+              "minimum": 0,
+              "type": "integer"
+            }
+          },
+          "required": [
+            "pane_id",
+            "viewport_row",
+            "col"
+          ],
+          "type": "object"
+        },
         "PaneListParams": {
           "properties": {
             "workspace_id": {
@@ -5870,6 +5912,22 @@
         {
           "properties": {
             "method": {
+              "const": "pane.link.peek",
+              "type": "string"
+            },
+            "params": {
+              "$ref": "#/schemas/request/$defs/PaneLinkPeekParams"
+            }
+          },
+          "required": [
+            "method",
+            "params"
+          ],
+          "type": "object"
+        },
+        {
+          "properties": {
+            "method": {
               "const": "pane.rename",
               "type": "string"
             },
@@ -8162,6 +8220,35 @@
           ],
           "type": "object"
         },
+        "PaneLinkRun": {
+          "description": "One stretch of a viewport row a link covers; `end_col` is exclusive.",
+          "properties": {
+            "end_col": {
+              "format": "uint16",
+              "maximum": 65535,
+              "minimum": 0,
+              "type": "integer"
+            },
+            "start_col": {
+              "format": "uint16",
+              "maximum": 65535,
+              "minimum": 0,
+              "type": "integer"
+            },
+            "viewport_row": {
+              "format": "uint16",
+              "maximum": 65535,
+              "minimum": 0,
+              "type": "integer"
+            }
+          },
+          "required": [
+            "viewport_row",
+            "start_col",
+            "end_col"
+          ],
+          "type": "object"
+        },
         "PaneMoveReason": {
           "enum": [
             "same_tab",
@@ -10393,6 +10480,30 @@
               "required": [
                 "type",
                 "handled"
+              ],
+              "type": "object"
+            },
+            {
+              "properties": {
+                "runs": {
+                  "items": {
+                    "$ref": "#/schemas/success_response/$defs/PaneLinkRun"
+                  },
+                  "type": "array"
+                },
+                "type": {
+                  "const": "pane_link_peeked",
+                  "type": "string"
+                },
+                "url": {
+                  "type": [
+                    "string",
+                    "null"
+                  ]
+                }
+              },
+              "required": [
+                "type"
               ],
               "type": "object"
             },

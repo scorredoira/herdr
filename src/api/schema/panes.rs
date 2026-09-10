@@ -59,6 +59,26 @@ pub struct PaneLinkActivateParams {
     pub offset_from_bottom: Option<u64>,
 }
 
+/// Where the pointer is, to ask what link is drawn under it without opening anything.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, schemars::JsonSchema)]
+pub struct PaneLinkPeekParams {
+    pub pane_id: String,
+    pub viewport_row: u16,
+    pub col: u16,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub content_revision: Option<u64>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub offset_from_bottom: Option<u64>,
+}
+
+/// One stretch of a viewport row a link covers; `end_col` is exclusive.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, schemars::JsonSchema)]
+pub struct PaneLinkRun {
+    pub viewport_row: u16,
+    pub start_col: u16,
+    pub end_col: u16,
+}
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, schemars::JsonSchema)]
 #[serde(rename_all = "snake_case")]
 pub enum PaneDirection {

@@ -185,6 +185,8 @@ pub enum Method {
     PaneInputSet(PaneInputSetParams),
     #[serde(rename = "pane.link.activate")]
     PaneLinkActivate(PaneLinkActivateParams),
+    #[serde(rename = "pane.link.peek")]
+    PaneLinkPeek(PaneLinkPeekParams),
     #[serde(rename = "pane.rename")]
     PaneRename(PaneRenameParams),
     #[serde(rename = "pane.send_text")]

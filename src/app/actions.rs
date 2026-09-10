@@ -1093,6 +1093,22 @@ impl AppState {
     }
 }
 
+/// A stretch of one viewport row a link occupies. `end_col` is exclusive.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) struct LinkRun {
+    pub(crate) viewport_row: u16,
+    pub(crate) start_col: u16,
+    pub(crate) end_col: u16,
+}
+
+/// A link and the cells it was drawn on, so the same lookup answers both "what would a
+/// click open" and "what should be underlined".
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub(crate) struct LinkAtCell {
+    pub(crate) url: String,
+    pub(crate) runs: Vec<LinkRun>,
+}
+
 impl AppState {
     pub(crate) fn url_at_pane_surface_cell(
         &self,
@@ -1102,9 +1118,22 @@ impl AppState {
         viewport_row: u16,
         col: u16,
     ) -> Option<String> {
+        let link =
+            self.link_at_pane_surface_cell(terminal_runtimes, ws_idx, pane_id, viewport_row, col)?;
+        Some(link.url)
+    }
+
+    pub(crate) fn link_at_pane_surface_cell(
+        &self,
+        terminal_runtimes: &crate::terminal::TerminalRuntimeRegistry,
+        ws_idx: usize,
+        pane_id: crate::layout::PaneId,
+        viewport_row: u16,
+        col: u16,
+    ) -> Option<LinkAtCell> {
         let rt = self.runtime_for_pane_in_workspace(terminal_runtimes, ws_idx, pane_id)?;
         let (height, width) = rt.current_size();
-        url_at_runtime_cell(
+        link_at_runtime_cell(
             rt,
             pane_id,
             ratatui::layout::Rect::new(0, 0, width, height),
@@ -1115,25 +1144,37 @@ impl AppState {
     }
 }
 
-fn url_at_runtime_cell(
+fn link_at_runtime_cell(
     runtime: &crate::terminal::TerminalRuntime,
     pane_id: crate::layout::PaneId,
     area: ratatui::layout::Rect,
     viewport_row: u16,
     col: u16,
     metrics: Option<crate::pane::ScrollMetrics>,
-) -> Option<String> {
+) -> Option<LinkAtCell> {
     if viewport_row >= area.height || col >= area.width {
         return None;
     }
     let screen_col = area.x.saturating_add(col);
     let screen_row = area.y.saturating_add(viewport_row);
-    if let Some((_, _, uri)) = runtime
-        .visible_hyperlinks(area)
-        .into_iter()
+    let hyperlinks = runtime.visible_hyperlinks(area);
+    if let Some((_, id, uri)) = hyperlinks
+        .iter()
         .find(|((x, y), _, _)| *x == screen_col && *y == screen_row)
     {
-        return Some(uri);
+        // An OSC 8 link is whatever carries the same identity, however far it wraps.
+        let cells = hyperlinks
+            .iter()
+            .filter(|(_, other_id, other_uri)| other_id == id && other_uri == uri)
+            .map(|((x, y), _, _)| {
+                let start = x.saturating_sub(area.x);
+                (y.saturating_sub(area.y), start, start.saturating_add(1))
+            })
+            .collect();
+        return Some(LinkAtCell {
+            url: uri.clone(),
+            runs: merge_link_runs(cells),
+        });
     }
 
     let visible_selection = Selection::line_range(
@@ -1151,7 +1192,50 @@ fn url_at_runtime_cell(
         .find('\n')
         .map_or(visible_text.len(), |idx| logical_cell.byte_index + idx);
     let line = visible_text.get(line_start..line_end)?;
-    url_at_column(line, logical_cell.logical_col).map(str::to_owned)
+    let (start_byte, end_byte) = link_bytes_at_column(line, logical_cell.logical_col)?;
+    let url = line.get(start_byte..end_byte)?.to_owned();
+
+    // The token was found in one logical line; the cells it was DRAWN on may be two
+    // screen rows when that line wrapped, which is why the runs come from the visible
+    // cells rather than from the byte range.
+    let start = line_start + start_byte;
+    let end = line_start + end_byte;
+    let cells = visible_text_cells(&visible_text, area.width)
+        .into_iter()
+        .filter(|cell| cell.byte_index >= start && cell.byte_index < end)
+        .map(|cell| {
+            let width = u16::from(crate::ghostty::unicode_codepoint_width(cell.ch as u32));
+            (
+                cell.screen_row,
+                cell.screen_col,
+                cell.screen_col.saturating_add(width.max(1)),
+            )
+        })
+        .collect();
+
+    Some(LinkAtCell {
+        url,
+        runs: merge_link_runs(cells),
+    })
+}
+
+/// Collapses the cells a link covers into one run per stretch of a row.
+fn merge_link_runs(mut cells: Vec<(u16, u16, u16)>) -> Vec<LinkRun> {
+    cells.sort_unstable();
+    let mut runs: Vec<LinkRun> = Vec::new();
+    for (viewport_row, start_col, end_col) in cells {
+        match runs.last_mut() {
+            Some(last) if last.viewport_row == viewport_row && last.end_col >= start_col => {
+                last.end_col = last.end_col.max(end_col);
+            }
+            _ => runs.push(LinkRun {
+                viewport_row,
+                start_col,
+                end_col,
+            }),
+        }
+    }
+    runs
 }
 
 pub(crate) fn safe_web_url(url: &str) -> Option<&str> {
@@ -1205,6 +1289,13 @@ pub(crate) fn word_bounds_at_column(row: &str, col: u16) -> Option<(u16, u16)> {
 /// `src/main.rs:12:3` that a plugin link handler may claim. A path is never opened by
 /// Herdr itself, so a click on one with no handler falls through to the pane.
 pub(crate) fn url_at_column(row: &str, col: u16) -> Option<&str> {
+    let (start, end) = link_bytes_at_column(row, col)?;
+    row.get(start..end)
+}
+
+/// Where the link under a column starts and ends in the row, so a caller that wants to
+/// draw it has the same answer the caller that opens it gets.
+fn link_bytes_at_column(row: &str, col: u16) -> Option<(usize, usize)> {
     let cells = text_cells(row);
     let clicked_idx = cell_index_at_column(&cells, col)?;
     if let Some(span) = url_spans(&cells)
@@ -1213,13 +1304,14 @@ pub(crate) fn url_at_column(row: &str, col: u16) -> Option<&str> {
     {
         let start_byte = byte_index_for_cell(row, span.start);
         let end_byte = byte_index_after_cell(row, span.end);
-        return safe_web_url(row.get(start_byte..end_byte)?);
+        let url = row.get(start_byte..end_byte)?;
+        return safe_web_url(url).map(|_| (start_byte, end_byte));
     }
     let span = path_span_at_column(&cells, clicked_idx)?;
     let start_byte = byte_index_for_cell(row, span.start);
     let end_byte = byte_index_after_cell(row, span.end);
     let path = row.get(start_byte..end_byte)?;
-    looks_like_file_path(path).then_some(path)
+    looks_like_file_path(path).then_some((start_byte, end_byte))
 }
 
 /// The whitespace-delimited token under the click, with the punctuation that prose and
@@ -2569,6 +2661,56 @@ mod tests {
             None
         );
         assert_eq!(selected_url("open file:///tmp/report", "file"), None);
+    }
+
+    #[test]
+    fn link_at_runtime_cell_reports_the_cells_the_link_was_drawn_on() {
+        let rt = tokio::runtime::Builder::new_current_thread()
+            .enable_all()
+            .build()
+            .expect("test runtime");
+        let _guard = rt.enter();
+        let (runtime, _input_rx) =
+            crate::terminal::TerminalRuntime::test_with_channel_capacity(40, 4, 8);
+        runtime.test_process_pty_bytes(b"see src/main.rs:12 here");
+
+        let area = ratatui::layout::Rect::new(0, 0, 40, 4);
+        let pane_id = crate::layout::PaneId::from_raw(1);
+        let link = link_at_runtime_cell(&runtime, pane_id, area, 0, 6, None).expect("a link");
+
+        assert_eq!(link.url, "src/main.rs:12");
+        assert_eq!(
+            link.runs,
+            vec![LinkRun {
+                viewport_row: 0,
+                start_col: 4,
+                end_col: 18,
+            }]
+        );
+
+        // The words around it are not links, so there is nothing to underline there.
+        assert!(link_at_runtime_cell(&runtime, pane_id, area, 0, 1, None).is_none());
+        assert!(link_at_runtime_cell(&runtime, pane_id, area, 0, 20, None).is_none());
+    }
+
+    #[test]
+    fn merge_link_runs_joins_a_row_and_keeps_a_wrap_apart() {
+        let runs = merge_link_runs(vec![(0, 4, 5), (0, 5, 6), (0, 6, 7), (1, 0, 1), (1, 1, 2)]);
+        assert_eq!(
+            runs,
+            vec![
+                LinkRun {
+                    viewport_row: 0,
+                    start_col: 4,
+                    end_col: 7,
+                },
+                LinkRun {
+                    viewport_row: 1,
+                    start_col: 0,
+                    end_col: 2,
+                },
+            ]
+        );
     }
 
     #[test]

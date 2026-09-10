@@ -4,6 +4,7 @@
 
 ### Added
 - Modified clicks now recognize file paths (`src/main.rs:12:3`, `main.ts(12,3)`) and hand them to plugin link handlers; a path no handler claims falls through to the pane. The modifier is configurable with `ui.link_click_modifier` (default `ctrl`).
+- Holding the link modifier now underlines the link under the pointer, so a modified click shows what it would take before it takes it.
 - A pane is now told the light or dark appearance of the theme Herdr paints around it, so an editor or a TUI inside it picks the matching variant; the host terminal's own appearance is used only by the `terminal` theme, which paints none of its own.
 
 ## [0.9.0] - 2026-09-07

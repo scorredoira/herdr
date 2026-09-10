@@ -6,11 +6,11 @@ mod runtime;
 
 use super::responses::{encode_error, encode_success};
 use crate::api::schema::{
-    InstalledPluginInfo, PaneLinkActivateParams, PluginActionInfo, PluginActionInvokeParams,
-    PluginActionListParams, PluginLinkParams, PluginListParams, PluginLogListParams,
-    PluginManifestAction, PluginManifestLinkHandler, PluginPaneCloseParams, PluginPaneFocusParams,
-    PluginPaneInfo, PluginPaneOpenParams, PluginPanePlacement, PluginSetEnabledParams,
-    PluginUnlinkParams, ResponseResult,
+    InstalledPluginInfo, PaneLinkActivateParams, PaneLinkPeekParams, PaneLinkRun, PluginActionInfo,
+    PluginActionInvokeParams, PluginActionListParams, PluginLinkParams, PluginListParams,
+    PluginLogListParams, PluginManifestAction, PluginManifestLinkHandler, PluginPaneCloseParams,
+    PluginPaneFocusParams, PluginPaneInfo, PluginPaneOpenParams, PluginPanePlacement,
+    PluginSetEnabledParams, PluginUnlinkParams, ResponseResult,
 };
 use crate::app::App;
 pub(super) use manifest::normalize_plugin_id;
@@ -327,6 +327,74 @@ impl App {
             None => false,
         };
         encode_success(id, ResponseResult::PaneLinkActivated { url, handled })
+    }
+
+    /// Answers what link is drawn under a cell, and where, without opening it: the client
+    /// asks this while a modifier is held so it can underline what a click would take.
+    pub(super) fn handle_pane_link_peek(
+        &mut self,
+        id: String,
+        params: PaneLinkPeekParams,
+    ) -> String {
+        let Some((ws_idx, pane_id)) = self.parse_pane_id(&params.pane_id) else {
+            return encode_error(id, "pane_not_found", "pane not found");
+        };
+        if !self.state.pane_visible_on_active_surface(ws_idx, pane_id) {
+            return encode_error(id, "stale_target", "pane is no longer visible");
+        }
+        let Some(runtime) =
+            self.state
+                .runtime_for_pane_in_workspace(&self.terminal_runtimes, ws_idx, pane_id)
+        else {
+            return encode_error(id, "pane_not_found", "pane runtime not found");
+        };
+
+        // A hover is not an act, so a stale answer is not worth an error: what moved under
+        // the pointer simply has no link, and the next movement asks again.
+        let current_offset = runtime
+            .scroll_metrics()
+            .map(|metrics| metrics.offset_from_bottom as u64);
+        let content_revision = runtime.content_seq();
+        let stale = content_revision % 2 != 0
+            || params
+                .content_revision
+                .is_some_and(|expected| expected != content_revision)
+            || params
+                .offset_from_bottom
+                .is_some_and(|expected| current_offset != Some(expected));
+        if stale {
+            return encode_success(
+                id,
+                ResponseResult::PaneLinkPeeked {
+                    url: None,
+                    runs: Vec::new(),
+                },
+            );
+        }
+
+        let link = self.state.link_at_pane_surface_cell(
+            &self.terminal_runtimes,
+            ws_idx,
+            pane_id,
+            params.viewport_row,
+            params.col,
+        );
+        let (url, runs) = match link {
+            Some(link) => {
+                let runs = link
+                    .runs
+                    .into_iter()
+                    .map(|run| PaneLinkRun {
+                        viewport_row: run.viewport_row,
+                        start_col: run.start_col,
+                        end_col: run.end_col,
+                    })
+                    .collect();
+                (Some(link.url), runs)
+            }
+            None => (None, Vec::new()),
+        };
+        encode_success(id, ResponseResult::PaneLinkPeeked { url, runs })
     }
 
     pub(crate) fn invoke_plugin_link_handler_for_url(

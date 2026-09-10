@@ -20,6 +20,47 @@ fn restore_mode_bar(
 }
 
 impl ClientShellState {
+    /// Underlines what a modified click would take, on the frame the pane surface was
+    /// just blitted into. The runs were measured against a content revision, so a pane
+    /// that has drawn since is left alone: the pointer's next move measures it again.
+    fn underline_link_hover(&self, frame: &mut FrameData) {
+        let Some(hover) = &self.link_hover else {
+            return;
+        };
+        let drawn_revision = self.pane_surface.as_ref().and_then(|surface| {
+            surface
+                .panes
+                .iter()
+                .find(|pane| pane.pane_id == hover.pane_id)
+                .map(|pane| pane.content_revision)
+        });
+        if drawn_revision != hover.content_revision {
+            return;
+        }
+
+        let underlined = ratatui::style::Modifier::UNDERLINED.bits();
+        for run in &hover.runs {
+            let y = hover.inner_rect.y.saturating_add(run.viewport_row);
+            if y >= hover.inner_rect.bottom() || y >= frame.height {
+                continue;
+            }
+            let start = hover.inner_rect.x.saturating_add(run.start_col);
+            let end = hover
+                .inner_rect
+                .x
+                .saturating_add(run.end_col)
+                .min(hover.inner_rect.right())
+                .min(frame.width);
+            for x in start..end {
+                let index = usize::from(y) * usize::from(frame.width) + usize::from(x);
+                let Some(cell) = frame.cells.get_mut(index) else {
+                    continue;
+                };
+                cell.modifier |= underlined;
+            }
+        }
+    }
+
     fn compose_unavailable(&mut self, cols: u16, rows: u16) -> FrameData {
         let layout = self.layout(cols, rows);
         let mut buffer = Buffer::empty(Rect::new(0, 0, cols, rows));
@@ -267,6 +308,7 @@ impl ClientShellState {
             frame.cells[start..start + usize::from(bar.width)].to_vec()
         });
         blit_pane_surface(&mut frame, &surface.frame, layout.pane_surface);
+        self.underline_link_hover(&mut frame);
         restore_mode_bar(&mut frame, mode_bar, mode_bar_cells.as_deref());
         let has_selection = self
             .selection
