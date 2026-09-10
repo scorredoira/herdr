@@ -54,7 +54,10 @@ impl App {
                     crate::pane::AgentDetection::Disabled,
                     app.state.pane_scrollback_limit_bytes,
                     app.state.host_terminal_theme,
-                    app.state.host_terminal_appearance,
+                    crate::app::state::pane_appearance(
+                        &app.state.theme_name,
+                        app.state.host_terminal_appearance,
+                    ),
                     app.event_tx.clone(),
                     app.render_notify.clone(),
                     app.render_dirty.clone(),
@@ -86,7 +89,10 @@ impl App {
                     crate::pane::AgentDetection::Disabled,
                     app.state.pane_scrollback_limit_bytes,
                     app.state.host_terminal_theme,
-                    app.state.host_terminal_appearance,
+                    crate::app::state::pane_appearance(
+                        &app.state.theme_name,
+                        app.state.host_terminal_appearance,
+                    ),
                     app.event_tx.clone(),
                     app.render_notify.clone(),
                     app.render_dirty.clone(),

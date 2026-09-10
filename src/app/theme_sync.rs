@@ -13,8 +13,10 @@ impl App {
         }
         self.state.host_terminal_appearance = appearance;
         self.state.host_terminal_appearance_explicit = explicit;
+        // The theme may follow the host (auto_switch), and the panes follow the theme.
+        self.refresh_effective_app_theme();
         self.apply_host_terminal_appearance_to_panes();
-        self.refresh_effective_app_theme()
+        true
     }
 
     pub(crate) fn set_host_terminal_theme(
@@ -39,14 +41,16 @@ impl App {
         }
         self.state.theme_name = theme_name;
         self.state.palette = palette;
+        self.apply_host_terminal_appearance_to_panes();
         self.render_dirty.request_generic();
         self.render_notify.notify_one();
         true
     }
 
     fn apply_host_terminal_appearance_to_panes(&self) {
+        let appearance = self.state.pane_appearance();
         for runtime in self.terminal_runtimes.values() {
-            runtime.apply_host_terminal_appearance(self.state.host_terminal_appearance);
+            runtime.apply_host_terminal_appearance(appearance);
         }
     }
 

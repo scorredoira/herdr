@@ -130,7 +130,10 @@ impl App {
             extra_env,
             self.state.pane_scrollback_limit_bytes,
             self.state.host_terminal_theme,
-            self.state.host_terminal_appearance,
+            crate::app::state::pane_appearance(
+                &self.state.theme_name,
+                self.state.host_terminal_appearance,
+            ),
             params.focus || placement == PluginPanePlacement::Zoomed,
         );
         let (tab_idx, new_pane) = match result {
@@ -207,7 +210,10 @@ impl App {
             extra_env,
             self.state.pane_scrollback_limit_bytes,
             self.state.host_terminal_theme,
-            self.state.host_terminal_appearance,
+            crate::app::state::pane_appearance(
+                &self.state.theme_name,
+                self.state.host_terminal_appearance,
+            ),
         ) {
             Ok(result) => result,
             Err(err) => return encode_error(id, "plugin_pane_open_failed", err.to_string()),

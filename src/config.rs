@@ -48,6 +48,7 @@ pub(crate) use self::{
         MAX_TAB_BAR_RIGHT_ENTRIES,
     },
     theme::canonical_theme_name,
+    theme::theme_appearance,
     window_title::{sanitize_window_title_text, window_title_diagnostics},
 };
 

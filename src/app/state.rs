@@ -892,6 +892,13 @@ pub struct AppState {
 }
 
 impl AppState {
+    /// What a pane is told about light or dark: the appearance of the theme herdr is
+    /// painting around it, which is what the pane's colours actually sit on; the host
+    /// terminal's own word only when the theme paints nothing (`terminal`).
+    pub(crate) fn pane_appearance(&self) -> Option<crate::terminal_theme::HostAppearance> {
+        pane_appearance(&self.theme_name, self.host_terminal_appearance)
+    }
+
     pub(crate) fn mark_session_dirty(&mut self) {
         self.session_dirty = true;
     }
@@ -1501,4 +1508,13 @@ mod tests {
             KeyModifiers::SHIFT,
         ));
     }
+}
+
+/// See [`AppState::pane_appearance`]; a free function so a caller holding a mutable borrow
+/// of one state field can still read the two this needs.
+pub(crate) fn pane_appearance(
+    theme_name: &str,
+    host: Option<crate::terminal_theme::HostAppearance>,
+) -> Option<crate::terminal_theme::HostAppearance> {
+    crate::config::theme_appearance(theme_name).or(host)
 }

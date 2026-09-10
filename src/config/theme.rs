@@ -22,6 +22,20 @@ pub const THEME_NAMES: &[&str] = &[
     "vesper",
 ];
 
+/// The appearance a built-in theme paints: what a pane sitting on it should be told, so an
+/// editor picks its light or dark variant to match. `terminal` paints nothing of its own, so
+/// it has no answer and the host's word stands.
+pub(crate) fn theme_appearance(name: &str) -> Option<crate::terminal_theme::HostAppearance> {
+    use crate::terminal_theme::HostAppearance;
+
+    match canonical_theme_name(name)? {
+        "terminal" => None,
+        "catppuccin-latte" | "tokyo-night-day" | "gruvbox-light" | "one-light"
+        | "solarized-light" | "kanagawa-lotus" | "rose-pine-dawn" => Some(HostAppearance::Light),
+        _ => Some(HostAppearance::Dark),
+    }
+}
+
 pub(crate) fn canonical_theme_name(name: &str) -> Option<&'static str> {
     match name.to_lowercase().replace([' ', '_'], "-").as_str() {
         "catppuccin" | "catppuccin-mocha" => Some("catppuccin"),
@@ -349,5 +363,30 @@ active_row_bg = "#131415"
         assert!(config.theme.dark_name.is_none());
         assert!(config.theme.light_name.is_none());
         assert!(config.theme.custom.is_none());
+    }
+}
+
+#[cfg(test)]
+mod theme_appearance_tests {
+    use super::theme_appearance;
+    use crate::terminal_theme::HostAppearance;
+
+    #[test]
+    fn built_in_themes_know_their_appearance() {
+        assert_eq!(theme_appearance("catppuccin"), Some(HostAppearance::Dark));
+        assert_eq!(
+            theme_appearance("Catppuccin Mocha"),
+            Some(HostAppearance::Dark)
+        );
+        assert_eq!(
+            theme_appearance("catppuccin-latte"),
+            Some(HostAppearance::Light)
+        );
+        assert_eq!(
+            theme_appearance("rose-pine-dawn"),
+            Some(HostAppearance::Light)
+        );
+        assert_eq!(theme_appearance("terminal"), None);
+        assert_eq!(theme_appearance("no-such-theme"), None);
     }
 }

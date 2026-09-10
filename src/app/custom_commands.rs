@@ -400,7 +400,10 @@ impl App {
             env,
             self.state.pane_scrollback_limit_bytes,
             self.state.host_terminal_theme,
-            self.state.host_terminal_appearance,
+            crate::app::state::pane_appearance(
+                &self.state.theme_name,
+                self.state.host_terminal_appearance,
+            ),
         )?;
         let new_pane_id = new_pane.pane_id;
         self.terminal_runtimes
@@ -487,7 +490,10 @@ impl App {
                 extra_env,
                 self.state.pane_scrollback_limit_bytes,
                 self.state.host_terminal_theme,
-                self.state.host_terminal_appearance,
+                crate::app::state::pane_appearance(
+                    &self.state.theme_name,
+                    self.state.host_terminal_appearance,
+                ),
                 true,
             );
             let (tab_idx, new_pane) = match result {
