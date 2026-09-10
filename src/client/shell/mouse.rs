@@ -859,9 +859,7 @@ impl ClientShellState {
             && self.overlay.is_none()
             && self.mode == ClientShellMode::Terminal
             && mouse.kind == MouseEventKind::Down(MouseButton::Left)
-            && mouse
-                .modifiers
-                .contains(crossterm::event::KeyModifiers::CONTROL)
+            && mouse.modifiers.contains(self.config.link_click_modifiers)
         {
             if let Some(hit) = self
                 .hits

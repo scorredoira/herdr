@@ -923,6 +923,12 @@
           "description": "Modifier that lets right-click gestures pass through to pane apps. Empty disables it. Accepts ctrl, alt, cmd, super, meta, hyper, or a + separated combination; shift is rejected because many terminals reserve Shift+mouse."
         },
         {
+          "key": "ui.link_click_modifier",
+          "type": "string",
+          "default": "\"ctrl\"",
+          "description": "Modifier that turns a left-click on a URL or a file path into a link activation: a web URL opens in the browser, a path goes to a plugin link handler. Accepts ctrl, alt, cmd, super, meta, hyper, or a + separated combination; shift is rejected because many terminals reserve Shift+mouse."
+        },
+        {
           "key": "ui.redraw_on_focus_gained",
           "type": "boolean",
           "default": "true",

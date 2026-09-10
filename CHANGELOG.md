@@ -2,6 +2,9 @@
 
 ## Unreleased
 
+### Added
+- Modified clicks now recognize file paths (`src/main.rs:12:3`, `main.ts(12,3)`) and hand them to plugin link handlers; a path no handler claims falls through to the pane. The modifier is configurable with `ui.link_click_modifier` (default `ctrl`).
+
 ## [0.9.0] - 2026-09-07
 
 ### Added

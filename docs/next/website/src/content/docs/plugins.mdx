@@ -342,12 +342,15 @@ description = "apply layout"
 
 ## Link handlers
 
-Use `[[link_handlers]]` to route modified clicks on matching terminal URLs to a
-plugin action instead of opening the URL in the browser. The modified-click
-modifier is Control on every platform, including macOS, because captured
-terminal mouse reports do not expose Command/Super separately from a plain
-click. `pattern` is a Rust regular expression matched against the clicked URL,
-and `action` must
+Use `[[link_handlers]]` to route modified clicks on matching terminal links to a
+plugin action instead of opening the URL in the browser. A link is a web URL, an
+OSC 8 hyperlink, or a file path printed by a compiler, a test runner or a grep —
+`src/main.rs:12:3`, `main.ts(12,3)`, `docs/ERRORS.md` — which Herdr never opens
+itself: with no handler claiming it, the click reaches the pane as usual. The
+modified-click modifier defaults to Control on every platform, including macOS,
+because captured terminal mouse reports do not expose Command/Super separately
+from a plain click; `ui.link_click_modifier` changes it. `pattern` is a Rust
+regular expression matched against the clicked link, and `action` must
 name an action declared by the same plugin. Link handler actions receive
 `invocation_source = "link_click"`, `clicked_url`, and `link_handler_id` in
 `HERDR_PLUGIN_CONTEXT_JSON`; shell plugins can also read

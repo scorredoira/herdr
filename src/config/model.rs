@@ -167,6 +167,37 @@ impl<'de> Deserialize<'de> for RightClickPassthroughModifierConfig {
     }
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct LinkClickModifierConfig(KeyModifiers);
+
+impl LinkClickModifierConfig {
+    pub fn modifiers(self) -> KeyModifiers {
+        self.0
+    }
+}
+
+impl Default for LinkClickModifierConfig {
+    fn default() -> Self {
+        Self(KeyModifiers::CONTROL)
+    }
+}
+
+impl<'de> Deserialize<'de> for LinkClickModifierConfig {
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+    where
+        D: Deserializer<'de>,
+    {
+        let value = String::deserialize(deserializer)?;
+        parse_modifier_combination(value.trim())
+            .map(Self)
+            .ok_or_else(|| {
+                de::Error::custom(
+                    "link_click_modifier must be ctrl/control, alt/option, cmd/command/super, meta, hyper, or a + separated combination without shift",
+                )
+            })
+    }
+}
+
 fn parse_right_click_passthrough_modifier(value: &str) -> Option<Option<KeyModifiers>> {
     let trimmed = value.trim();
     if trimmed.is_empty()
@@ -177,6 +208,10 @@ fn parse_right_click_passthrough_modifier(value: &str) -> Option<Option<KeyModif
         return Some(None);
     }
 
+    parse_modifier_combination(trimmed).map(Some)
+}
+
+fn parse_modifier_combination(trimmed: &str) -> Option<KeyModifiers> {
     let mut modifiers = KeyModifiers::empty();
     for token in trimmed.split('+') {
         let token = token.trim().to_ascii_lowercase();
@@ -192,7 +227,7 @@ fn parse_right_click_passthrough_modifier(value: &str) -> Option<Option<KeyModif
         modifiers |= modifier;
     }
 
-    (!modifiers.is_empty()).then_some(Some(modifiers))
+    (!modifiers.is_empty()).then_some(modifiers)
 }
 
 #[derive(Debug, Clone)]
@@ -920,6 +955,8 @@ pub struct UiConfig {
     pub host_cursor: HostCursorModeConfig,
     /// Modifier that lets right-click gestures pass through to pane apps. Empty disables it.
     pub right_click_passthrough_modifier: RightClickPassthroughModifierConfig,
+    /// Modifier that turns a left-click on a URL or file path into a link activation. Default: ctrl.
+    pub link_click_modifier: LinkClickModifierConfig,
     /// Force a full host-terminal redraw when the outer terminal regains focus. Default: true.
     pub redraw_on_focus_gained: bool,
     /// Lines to scroll per mouse wheel notch. Default: 3.
@@ -1168,6 +1205,7 @@ impl Default for UiConfig {
             copy_on_select: true,
             host_cursor: HostCursorModeConfig::Auto,
             right_click_passthrough_modifier: RightClickPassthroughModifierConfig::default(),
+            link_click_modifier: LinkClickModifierConfig::default(),
             redraw_on_focus_gained: true,
             mouse_scroll_lines: None,
             confirm_close: true,
@@ -1203,6 +1241,10 @@ impl UiConfig {
 
     pub fn right_click_passthrough_modifiers(&self) -> Option<KeyModifiers> {
         self.right_click_passthrough_modifier.modifiers()
+    }
+
+    pub fn link_click_modifiers(&self) -> KeyModifiers {
+        self.link_click_modifier.modifiers()
     }
 }
 
@@ -1713,6 +1755,47 @@ copy_on_select = false
 "#;
         let config: Config = toml::from_str(toml).unwrap();
         assert!(!config.ui.copy_on_select);
+    }
+
+    #[test]
+    fn link_click_modifier_defaults_to_ctrl_and_parses() {
+        let default_config = Config::default();
+        assert_eq!(
+            default_config.ui.link_click_modifiers(),
+            KeyModifiers::CONTROL
+        );
+
+        for (value, expected) in [
+            ("alt", KeyModifiers::ALT),
+            ("option", KeyModifiers::ALT),
+            ("ctrl+alt", KeyModifiers::CONTROL | KeyModifiers::ALT),
+        ] {
+            let toml = format!(
+                r#"
+[ui]
+link_click_modifier = "{value}"
+"#
+            );
+            let config: Config = toml::from_str(&toml).unwrap();
+            assert_eq!(
+                config.ui.link_click_modifiers(),
+                expected,
+                "value {value:?}"
+            );
+        }
+
+        for value in ["", "none", "shift", "ctrl+shift"] {
+            let toml = format!(
+                r#"
+[ui]
+link_click_modifier = "{value}"
+"#
+            );
+            assert!(
+                toml::from_str::<Config>(&toml).is_err(),
+                "value {value:?} should be rejected"
+            );
+        }
     }
 
     #[test]

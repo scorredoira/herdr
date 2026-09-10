@@ -1201,15 +1201,98 @@ pub(crate) fn word_bounds_at_column(row: &str, col: u16) -> Option<(u16, u16)> {
     Some(span.columns(&cells))
 }
 
+/// Returns the link under a terminal column: a web URL, or a file path such as
+/// `src/main.rs:12:3` that a plugin link handler may claim. A path is never opened by
+/// Herdr itself, so a click on one with no handler falls through to the pane.
 pub(crate) fn url_at_column(row: &str, col: u16) -> Option<&str> {
     let cells = text_cells(row);
     let clicked_idx = cell_index_at_column(&cells, col)?;
-    let span = url_spans(&cells)
+    if let Some(span) = url_spans(&cells)
         .into_iter()
-        .find(|span| span.contains(clicked_idx))?;
+        .find(|span| span.contains(clicked_idx))
+    {
+        let start_byte = byte_index_for_cell(row, span.start);
+        let end_byte = byte_index_after_cell(row, span.end);
+        return safe_web_url(row.get(start_byte..end_byte)?);
+    }
+    let span = path_span_at_column(&cells, clicked_idx)?;
     let start_byte = byte_index_for_cell(row, span.start);
     let end_byte = byte_index_after_cell(row, span.end);
-    safe_web_url(row.get(start_byte..end_byte)?)
+    let path = row.get(start_byte..end_byte)?;
+    looks_like_file_path(path).then_some(path)
+}
+
+/// The whitespace-delimited token under the click, with the punctuation that prose and
+/// compilers wrap a path in trimmed off: `(src/a.rs:3)`, `"src/a.rs",` and `src/a.rs:3:`
+/// all yield `src/a.rs:3`. Balanced brackets stay, so `main.ts(12,3)` survives whole.
+fn path_span_at_column(cells: &[TextCell], clicked_idx: usize) -> Option<CellSpan> {
+    if cells.get(clicked_idx)?.ch.is_whitespace() {
+        return None;
+    }
+    let mut start = clicked_idx;
+    while start > 0 && !cells[start - 1].ch.is_whitespace() {
+        start -= 1;
+    }
+    let mut end = clicked_idx;
+    while end + 1 < cells.len() && !cells[end + 1].ch.is_whitespace() {
+        end += 1;
+    }
+    while start <= end && matches!(cells[start].ch, '(' | '[' | '{' | '<' | '"' | '\'' | '`') {
+        start += 1;
+    }
+    if start > end || start > clicked_idx {
+        return None;
+    }
+    let span = trim_url_edges(cells, CellSpan { start, end })?;
+    span.contains(clicked_idx).then_some(span)
+}
+
+/// Whether a token reads as a file path: no URL scheme, and either a directory separator
+/// or a file extension, once an optional `:line[:col]` or `(line,col)` suffix is removed.
+/// Version numbers (`1.2.3`) and prose fragments have neither.
+fn looks_like_file_path(token: &str) -> bool {
+    if token.contains("://") || token.starts_with('-') {
+        return false;
+    }
+    let name = strip_position_suffix(token);
+    if name.is_empty() || !name.chars().any(|ch| ch.is_alphanumeric()) {
+        return false;
+    }
+    if name.contains('/') || name.contains('\\') {
+        return name.chars().any(|ch| ch.is_alphanumeric());
+    }
+    let Some((_, extension)) = name.rsplit_once('.') else {
+        return false;
+    };
+    let mut chars = extension.chars();
+    matches!(chars.next(), Some(first) if first.is_ascii_alphabetic())
+        && extension.len() <= 8
+        && chars.all(|ch| ch.is_ascii_alphanumeric())
+}
+
+fn strip_position_suffix(token: &str) -> &str {
+    let mut name = token;
+    if let Some(open) = name.rfind('(') {
+        let inner = &name[open + 1..];
+        if let Some(inner) = inner.strip_suffix(')') {
+            if !inner.is_empty()
+                && inner
+                    .chars()
+                    .all(|ch| ch.is_ascii_digit() || ch == ',' || ch == ':')
+            {
+                name = &name[..open];
+            }
+        }
+    }
+    loop {
+        let Some((head, tail)) = name.rsplit_once(':') else {
+            return name;
+        };
+        if tail.is_empty() || !tail.chars().all(|ch| ch.is_ascii_digit()) {
+            return name;
+        }
+        name = head;
+    }
 }
 
 fn url_spans(cells: &[TextCell]) -> Vec<CellSpan> {
@@ -2486,6 +2569,38 @@ mod tests {
             None
         );
         assert_eq!(selected_url("open file:///tmp/report", "file"), None);
+    }
+
+    #[test]
+    fn url_at_column_returns_file_paths_for_link_handlers() {
+        assert_eq!(
+            selected_url("--> src/app/actions.rs:12:3", "actions"),
+            Some("src/app/actions.rs:12:3")
+        );
+        assert_eq!(
+            selected_url("    loginas_test.go:41: expected 200", "loginas"),
+            Some("loginas_test.go:41")
+        );
+        assert_eq!(
+            selected_url("error in (client/scl/core/api.ts), see", "api"),
+            Some("client/scl/core/api.ts")
+        );
+        assert_eq!(
+            selected_url("main.ts(12,3): error TS2304", "main"),
+            Some("main.ts(12,3)")
+        );
+        assert_eq!(
+            selected_url("open ~/projects/scl/CLAUDE.md.", "CLAUDE"),
+            Some("~/projects/scl/CLAUDE.md")
+        );
+        assert_eq!(
+            selected_url("see `docs/ERRORS.md`", "ERRORS"),
+            Some("docs/ERRORS.md")
+        );
+        assert_eq!(selected_url("version 1.2.3 released", "1.2"), None);
+        assert_eq!(selected_url("plain words here", "words"), None);
+        assert_eq!(selected_url("flag --config.yaml given", "config"), None);
+        assert_eq!(selected_url("a path src/a.rs:3 here", " "), None);
     }
 
     #[test]
